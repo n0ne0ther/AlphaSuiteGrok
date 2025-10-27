@@ -1,23 +1,22 @@
 # AlphaSuite
 
-AlphaSuite is a comprehensive suite of tools for quantitative financial analysis, model training, backtesting, and trade management. It's designed for traders and analysts who want to build, validate, and deploy data-driven trading strategies.
+AlphaSuite is an open-source quantitative analysis platform that gives you the power to build, test, and deploy professional-grade trading strategies. It's designed for traders and analysts who want to move beyond simple backtests and develop a genuine, data-driven edge in the financial markets.
 
 ## ✨ Key Features
-
-*   **Strategy Development & Backtesting**:
-    *   **Model Training & Tuning**: Fine-tune strategy parameters using Bayesian optimization and train final models with walk-forward analysis.
-    *   **Performance Visualization**: Visualize a tuned model's out-of-sample performance, trade executions, and feature importances.
-    *   **Portfolio Analysis**: Discover which stocks are suitable for a strategy and run portfolio-level backtests to validate your ideas.
-    *   **Interactive Backtester**: Visualize the in-sample performance of a saved model on historical data.
-*   **Live Analysis & Trading**:
-    *   **Market Scanner**: Scan the market for trading signals based on pre-trained models or run an interactive scan on-demand.
-    *   **Portfolio Manager**: Manually add, view, and manage your open trading positions.
-*   **Data & Research**:
-    *   **Data Management**: Control the entire data pipeline, from downloading market data to running rule-based scanners.
-    *   **AI-Powered Stock Reports**: Generate a comprehensive fundamental and technical analysis report or CANSLIM analysis for any stock.
-    *   **News Intelligence**: Scans recent news, generates a detailed market briefing, and analyzes it against economic risk profiles.
-*   **Robust Data Pipeline**: Fetches and stores comprehensive company data, price history, financials, and analyst estimates from Yahoo Finance into a PostgreSQL database.
-*   **Interactive Web UI**: A Streamlit-based dashboard for managing data, training models, and analyzing results. 
+ 
+*   **Modular Strategy Engine**: A powerful, `pybroker`-based engine for rigorous backtesting.
+    *   **Walk-Forward Analysis**: Test strategies on out-of-sample data to prevent overfitting and ensure robustness.
+    *   **Bayesian Optimization**: Automatically tune strategy parameters to find the most optimal settings.
+    *   **ML Integration**: Seamlessly integrate machine learning models (like LightGBM) into your strategies.
+    *   **Extensible SDK**: Add new, complex trading strategies by creating a single Python file.
+*   **Powerful Market Scanning**: A fully customizable scanner to find trading opportunities across global markets.
+    *   **Generic Screener**: A rich UI to build custom screens using dozens of fundamental and technical filters without writing code.
+    *   **Custom Scanner SDK**: An extensible framework to create scanners for any pattern imaginable, from RSI divergences to complex Wyckoff setups.
+    *   **20+ Pre-Built Scanners**: Comes with a rich library of ready-to-use scanners for common trading patterns.
+*   **Comprehensive Data & Research Tools**: An integrated suite for deep market analysis.
+    *   **Automated Data Pipeline**: Fetches and stores comprehensive data for global markets from Yahoo Finance into a PostgreSQL database.
+    *   **AI-Powered Stock Reports**: Generate in-depth fundamental and technical analysis reports for any stock using LLMs.
+    *   **AI News Intelligence**: Get AI-generated market briefings and risk analysis based on the latest financial news.
 
 ## 🌐 Live Demo
 
@@ -50,6 +49,7 @@ Analyze the out-of-sample performance of a trained and tuned strategy model.
 
 Check out these articles to see how AlphaSuite can be used to develop and test sophisticated trading strategies from scratch:
 
+*   **[Stop Paying for Stock Screeners. Build Your Own for Free with Python](https://medium.com/codex/stop-paying-for-stock-screeners-build-your-own-for-free-with-python-222b52d324b5)**: A comprehensive guide on using AlphaSuite's modular market scanner to build custom screens for any market, moving beyond the limitations of commercial tools.
 *   **[From Backtest to Battle-Ready: A Guide to Preparing a Trading Strategy with AlphaSuite](https://medium.com/codex/from-backtest-to-battle-ready-a-guide-to-preparing-a-trading-strategy-with-alphasuite-23d765085cd6)**: A practical, step-by-step walkthrough for taking a strategy from concept to live-trading readiness using our open-source quant engine.
 *   **[We Backtested a Viral Trading Strategy. The Results Will Teach You a Lesson.](https://medium.com/codex/we-backtested-a-viral-trading-strategy-the-results-will-teach-you-a-lesson-b57d7c9bfb74)**: An investigation into a popular trading strategy, highlighting critical lessons on overfitting, data leakage, and the importance of robust backtesting. Also available as a [video narration](https://youtu.be/-cKYPx43jTg).
 *   **[I Was Paralyzed by Uncertainty, So I Built My Own Quant Engine](https://medium.com/codex/i-was-paralyzed-by-stock-market-uncertainty-so-i-built-my-own-quant-engine-176a6706c451)**: The story behind AlphaSuite's creation and its mission to empower data-driven investors. Also available as a [video narration](https://youtu.be/NXk7bXPYGP8).
@@ -75,6 +75,7 @@ The project is organized into several key directories:
 *   `pages/`: Each file in this directory corresponds to a page in the Streamlit web UI.
 *   `pybroker_trainer/`: Holds the machine learning pipeline for training and tuning trading models with `pybroker`.
 *   `strategies/`: Contains the definitions for different trading strategies. New strategies can be added here.
+*   `scanners/`: Contains the definitions for custom market scanners. New scanners can be added here.
 *   `tools/`: Includes various utility modules for tasks like financial calculations, data scanning, and interacting with the `yfinance` API.
 *   `Home.py`: The main entry point for the Streamlit application.
 *   `download_data.py`: The command-line interface for all data management tasks.
@@ -96,7 +97,7 @@ Follow these steps to set up and run AlphaSuite on your local machine.
 
 1.  **Clone the repository:**
     ```bash
-    git clone https://github.com/your-username/AlphaSuite.git
+    git clone https://github.com/rsandx/AlphaSuite.git
     cd AlphaSuite
     ```
 
@@ -139,8 +140,12 @@ Follow these steps to set up and run AlphaSuite on your local machine.
 
 1.  **Initial Data Download:**
     Before running the app, you need to populate the database with market data. Run the download script from your terminal. This may take a long time for the initial run.
+    *   For the **very first run** to populate your database:
+        ```bash
+        python download_data.py download 
+        ```
     ```bash
-    # Download data for the US market (recommended for first run)
+    # For subsequent daily updates, run the pipeline:
     python download_data.py pipeline
     ```
 
@@ -152,7 +157,7 @@ Follow these steps to set up and run AlphaSuite on your local machine.
 
 3.  **Follow the In-App Workflow:**
     1.  **Populate Data:** Go to the **Data Management** page and run the "Daily Pipeline" or a "Full Download".
-    2.  **Scan for Signals:** Use the **Market Scanner** to find live trading signals.
+    2.  **Scan for Setups:** Go to the **Market Scanner** page. Use the "Signal Scanner" to find setups from your trained ML models, or use the "Generic Scanner" to find stocks matching fundamental or technical criteria with custom scanners.
     3.  **Tune & Train:** To build custom models, navigate to the **Model Training & Tuning** page.
     4.  **Analyze & Backtest:** Use the **Portfolio Analysis** page to validate your strategies.
     5.  **Deep Research:** Use the **Stock Report** page for in-depth analysis of specific stocks.
@@ -247,6 +252,93 @@ def get_setup_mask(self, data: pd.DataFrame) -> pd.Series:
 ```
 
 By following this structure, you can create new, complex strategies that seamlessly integrate with the project's backtesting, tuning, and training infrastructure.
+
+## 🧠 Adding a New Scanner
+
+AlphaSuite comes with over 20 pre-built custom scanners that are ready to use out of the box. These scanners cover a wide range of technical and fundamental patterns, from classic RSI divergences to complex Wyckoff accumulation setups. They not only provide powerful screening capabilities but also serve as excellent, practical examples for developers looking to build their own custom scanners.
+
+The Market Scanner is also designed to be modular, allowing you to create and integrate custom scanners with minimal effort. By adding a self-contained Python file to the `scanners/` directory, the system will automatically discover and load it into the Streamlit UI.
+
+### How It Works
+
+The system scans the `scanners/` directory for Python files. Inside each file, it looks for a class that inherits from `scanners.scanner_sdk.BaseScanner`. This class encapsulates all the logic and parameters for a single scanner. The `generic_screener.py` is a special, built-in scanner, but any other file you add will be treated as a custom scanner.
+
+### Step-by-Step Guide
+
+1.  **Create a New File:** Create a new Python file in the `scanners/` directory. The filename should be descriptive and use snake_case (e.g., `my_custom_scanner.py`). The filename will be used as the scanner's unique identifier.
+2.  **Define the Scanner Class:** Inside the new file, define a class that inherits from `BaseScanner`. The class name should be descriptive and use CamelCase (e.g., `MyCustomScanner`).
+3.  **Implement Required Methods:** Implement the required methods within your class to define its parameters, display columns, and scanning logic.
+
+### Scanner Class Breakdown
+
+Each scanner class should implement the following methods to define its behavior.
+
+#### 1. `define_parameters()`
+
+This static method defines the parameters that will appear in the UI for your scanner. It allows users to customize the scan without changing the code.
+
+*   **Returns:** A `list` of dictionaries, where each dictionary defines a parameter's `name`, `type` (`int`, `float`, `select`), `default` value, and `label`.
+
+**Example from `BullishDipBounceScanner`:**
+```python
+@staticmethod
+def define_parameters():
+    return [
+        {"name": "min_avg_volume", "type": "int", "default": 250000, "label": "Min. Avg. Volume"},
+        {"name": "rsi_period", "type": "int", "default": 7, "label": "RSI Period"},
+        {"name": "divergence_lookback", "type": "int", "default": 30, "label": "Divergence Lookback"},
+    ]
+```
+
+#### 2. `get_leading_columns()`
+
+This static method returns a list of column names that should be displayed first in the results table, ensuring the most important information is easily visible.
+
+*   **Returns:** A `list` of strings.
+
+**Example from `BullishDipBounceScanner`:**
+```python
+@staticmethod
+def get_leading_columns():
+    return ['symbol', 'rsi', 'divergence_date', 'longname', 'marketcap']
+```
+
+#### 3. `get_sort_info()`
+
+This static method defines the default sorting order for the results table.
+
+*   **Returns:** A `dict` specifying the column(s) to sort `by` and the `ascending` order.
+
+**Example from `BullishDipBounceScanner`:**
+```python
+@staticmethod
+def get_sort_info():
+    return {'by': 'marketcap', 'ascending': False}
+```
+
+#### 4. `scan_company()`
+
+This is the core logic of your scanner. The base framework handles filtering stocks by market, volume, and market cap, then calls this method for each remaining company. Your job is to analyze the provided data and determine if the company is a match.
+
+*   **Arguments:**
+    *   `group`: A pandas `DataFrame` containing the company's historical price data.
+    *   `company_info`: A `dict` containing basic company information from the database.
+*   **Returns:** The `company_info` dictionary if the stock matches the criteria (you can add new keys to it, like `divergence_date`), or `None` if it does not.
+
+**Example from `BullishDipBounceScanner`:**
+```python
+def scan_company(self, group: pd.DataFrame, company_info: dict) -> dict | None:
+    # ... (calculation logic for RSI, SMA, and divergence) ...
+
+    if is_uptrend and is_lower_low_price and is_higher_rsi:
+        company_info['rsi'] = float(rsi.iloc[-i])
+        company_info['divergence_date'] = group['date'].iloc[-i].strftime('%Y-%m-%d')
+        return company_info
+    
+    return None
+```
+
+For scanners with more complex requirements that don't fit the per-company iteration model (like the `StrongestIndustriesScanner`, which groups by industry first), you can override the `run_scan()` method to implement your own custom data fetching and processing logic.
 
 ## ⚖️ License
 

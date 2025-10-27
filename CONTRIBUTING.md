@@ -61,4 +61,12 @@ The core idea is to create a self-contained Python file in the `strategies/` dir
 
 For a detailed, step-by-step guide on how to structure your strategy file and implement the required methods, please refer to the **"Adding a New Trading Strategy"** section in the main README.md. We've provided a comprehensive breakdown of each required method with examples.
 
+## Contributing a New Scanner
+
+Similar to strategies, you can extend the platform's capabilities by adding custom market scanners. The Market Scanner page is designed to automatically discover and load any new scanner you create.
+
+The process involves creating a self-contained Python file in the `scanners/` directory that defines a class inheriting from `BaseScanner`.
+
+For a complete guide on how to create a scanner, define its parameters, and implement its logic, please see the **"Adding a New Scanner"** section in the main README.md.
+
 We are excited to see what new strategies you come up with!
