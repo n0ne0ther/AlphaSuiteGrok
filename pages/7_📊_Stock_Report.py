@@ -1,130 +1,73 @@
-import base64
-import os
 import streamlit as st
-import traceback
+import pandas as pd
+import plotly.graph_objects as go
+from core.db import get_all_data
+from strategies._all_in_one import run_all_scanners
 
-from tools.canslim_analysis_tool import CanslimReportGenerator
-from tools.yfinance_tool import is_ticker_active
-from load_cfg import DEMO_MODE, LLM_PROVIDER, get_llm
+st.set_page_config(page_title="Stock Report", layout="wide")
+st.title("DETAILED STOCK REPORT")
 
-st.set_page_config(page_title="Stock Report Generator", layout="wide")
+data = get_all_data()
+symbols = sorted(data.keys())
+ticker = st.selectbox("Select Ticker", symbols, index=symbols.index("PLTR") if "PLTR" in symbols else 0)
 
-st.title("📊 Stock Report Generator")
+if ticker not in data:
+    st.error("No data")
+    st.stop()
 
-if DEMO_MODE:
-    st.warning(
-        "**Demo Mode Active:** Live report generation is disabled. Sample reports will be shown instead.",
-        icon="🔒"
-    )
+df = data[ticker].copy()
+df = df.sort_index()
 
-st.markdown(f"""
-Enter a stock ticker to generate a report. Choose from:
-- **CANSLIM Analysis**: A detailed evaluation based on William O'Neil's CANSLIM investing principles.
-- **Comprehensive Report**: View a sample report. *(Note: This feature is for demonstration only. Contact the author for details on the full version.)*
+# === Header Metrics ===
+latest = df.iloc[-1]
+col1, col2, col3, col4 = st.columns(4)
+col1.metric("Price", f"${latest['close']:.2f}")
+col2.metric("Volume", f"{latest['volume']/1e6:.1f}M")
+vol_avg = df['volume'].rolling(20).mean().iloc[-1]
+col3.metric("20d Avg Vol", f"{vol_avg/1e6:.1f}M")
+col4.metric("Vol x Avg", f"{latest['volume']/vol_avg:.1f}x")
 
-The currently configured LLM provider is: **{LLM_PROVIDER.upper()}**
-""")
+# === Candlestick Chart ===
+fig = go.Figure()
+fig.add_trace(go.Candlestick(
+    x=df.index,
+    open=df['open'], high=df['high'],
+    low=df['low'], close=df['close'],
+    name=ticker
+))
+fig.update_layout(title=f"{ticker} – Full History", xaxis_rangeslider_visible=False, height=600)
+st.plotly_chart(fig, use_container_width=True)
 
-# --- State Management to preserve the report and ticker ---
-if 'report' not in st.session_state:
-    st.session_state.report = ""
-if 'ticker' not in st.session_state:
-    st.session_state.ticker = "META"  # Default ticker
-if 'report_bytes' not in st.session_state:
-    st.session_state.report_bytes = None
+# === Key Stats ===
+st.subheader("Technical Indicators")
+c1, c2, c3, c4 = st.columns(4)
+high_52w = df['high'].rolling(252).max().iloc[-1]
+c1.metric("52w High", f"${high_52w:.2f}")
+c2.metric("From 52w High", f"{(latest['close']/high_52w-1)*100:+.1f}%")
 
-def clear_report_state():
-    """Clears the generated report and its bytes from the session state."""
-    st.session_state.report = ""
-    st.session_state.report_bytes = None
+# RSI
+delta = df['close'].diff()
+up = delta.clip(lower=0).ewm(span=14).mean()
+down = -delta.clip(upper=0).ewm(span=14).mean()
+rsi = 100 - (100/(1 + up/down))
+c3.metric("RSI (14)", f"{rsi.iloc[-1]:.1f}")
 
-def generate_and_display_report(ticker_symbol, report_type):
-    """Generates and displays the selected report, or a sample for the comprehensive one."""
-    report_file = None
-    try:
-        if report_type == "Comprehensive Report":
-            st.info("Displaying a sample Comprehensive Report. This feature is for demonstration purposes.")
-            # Construct path to the sample report in the 'samples' directory at the project root
-            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            report_file = os.path.join(project_root, "samples", "META_comprehensive_report_20250824.pdf")
+volatility = df['close'].pct_change().rolling(20).std().iloc[-1] * 100
+c4.metric("20d Volatility", f"{volatility:.2f}%")
 
-            if not os.path.exists(report_file):
-                st.error("Sample report file not found. Please ensure 'samples/META_comprehensive_report_20250824.pdf' exists.")
-                clear_report_state()
-                return
+# === Current Strategy Signals ===
+st.subheader("Active Nuclear Signals")
+signals = run_all_scanners({ticker: df})
 
-        elif report_type == "CANSLIM Analysis":
-            if DEMO_MODE:
-                st.info("Displaying a sample CANSLIM Analysis Report. This feature is for demonstration purposes.")
-                # Construct path to the sample report in the 'samples' directory at the project root
-                project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-                report_file = os.path.join(project_root, "samples", "META_canslim_report_20250824.pdf")
+active = []
+for name, sig_df in signals.items():
+    if not sig_df.empty and ticker in sig_df['symbol'].values:
+        active.append(name)
 
-                if not os.path.exists(report_file):
-                    st.error("Sample report file not found. Please ensure 'samples/META_canslim_report_20250824.pdf' exists.")
-                    clear_report_state()
-                    return
-            else: # Original logic for non-demo mode
-                if not is_ticker_active(ticker_symbol):
-                    st.error(f"Ticker {ticker_symbol} is not actively traded or could not be found.")
-                    clear_report_state()
-                    return
+if active:
+    for signal in active:
+        st.success(f"→ {signal}")
+else:
+    st.info("No active signals right now")
 
-                spinner_text = f"Generating {report_type.lower()} for {ticker_symbol}... This may take some time."
-                with st.spinner(spinner_text):
-                    llm = get_llm()
-                    generator = CanslimReportGenerator(llm)
-                    report_file = generator.generate_report(ticker_symbol)
-        else:
-            st.error("Invalid report type selected.")
-            clear_report_state()
-            return
-
-        if report_file:
-            st.session_state.report = report_file
-            with open(report_file, "rb") as f:
-                st.session_state.report_bytes = f.read()
-            st.success(f"Report '{os.path.basename(st.session_state.report)}' loaded successfully.")
-
-    except Exception as e:
-        st.error(f"An error occurred while generating the report for {ticker_symbol}: {e}")
-        clear_report_state()
-        traceback.print_exc()
-
-# --- UI Components ---
-ticker_input = st.text_input(
-    "Enter Stock Ticker:", 
-    value=st.session_state.ticker, 
-    on_change=clear_report_state,
-    disabled=DEMO_MODE
-).upper()
-
-report_type = st.radio(
-    "Select Report Type:",
-    ("CANSLIM Analysis", "Comprehensive Report"),
-    key="report_type_selection",
-    on_change=clear_report_state
-)
-
-if st.button("Generate Report"):
-    st.session_state.ticker = ticker_input
-    generate_and_display_report(st.session_state.ticker, report_type)
-
-# --- Download Report ---
-if st.session_state.report_bytes:
-    st.download_button(
-        label="Download Report",
-        data=st.session_state.report_bytes,
-        file_name=os.path.basename(st.session_state.report),
-        mime="application/pdf"
-    )
-
-# --- Display Report ---
-if st.session_state.report and st.session_state.report_bytes:
-    st.subheader("Generated Report Preview")
-    try:
-        base64_pdf = base64.b64encode(st.session_state.report_bytes).decode('utf-8')
-        pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="800" type="application/pdf"></iframe>'
-        st.markdown(pdf_display, unsafe_allow_html=True)
-    except Exception as e:
-        st.error(f"Could not display PDF preview: {e}")
+st.caption("Fast • No external APIs • Works offline • Powered by your 52-stock nuclear universe")

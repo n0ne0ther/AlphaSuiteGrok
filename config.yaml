@@ -1,0 +1,10 @@
+database:
+  host: localhost
+  port: 8501
+  name: alphasuite
+  user: AlphaSuite
+  password: 317300EdC~~
+
+apis:
+  polygon:
+    key: PB2xJ2fRbMwZ8jks1lppw9Efn6qFp5ZJ   # ← paste your real key here

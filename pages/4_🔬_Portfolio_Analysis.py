@@ -1,167 +1,87 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+import numpy as np
+import plotly.express as px
+import plotly.graph_objects as go
+from core.db import get_all_data
+from strategies._all_in_one import run_all_scanners
 
-from load_cfg import DEMO_MODE
-from pybroker_trainer.strategy_loader import get_strategy_class_map
-from quant_engine import (
-    run_pre_scan_universe,
-    run_pybroker_portfolio_backtest,
-    get_default_tickers,
-    plot_performance_vs_benchmark
-)
+st.set_page_config(page_title="Risk Dashboard", layout="wide")
+st.title("RISK & OPPORTUNITY DASHBOARD")
 
-st.set_page_config(page_title="Portfolio Analysis", layout="wide")
-st.title("🔬 Portfolio Analysis")
+data = get_all_data()
+symbols = sorted(data.keys())
 
-if DEMO_MODE:
-    st.warning(
-        "**Demo Mode Active:** All portfolio analysis and backtesting operations are disabled. "
-        "To enable these features, set `DEMO_MODE = False` in `load_cfg.py`.",
-        icon="🔒"
-    )
+with st.spinner("Calculating risk + scanning all strategies..."):
+    all_signals = run_all_scanners(data)
 
-st.markdown("""
-This page provides tools to analyze strategies across a universe of stocks.
-- **Pre-Scan Universe:** Find which stocks from a list have a minimum number of historical trade setups for a given strategy. This helps build a viable candidate list for a portfolio backtest.
-- **Portfolio Backtest:** Run a single walk-forward backtest on a portfolio of tickers to see how the strategy performs with a fixed number of open positions.
-""")
-
-strategy_options = list(get_strategy_class_map().keys())
-
-if 'prescan_results' not in st.session_state:
-    st.session_state.prescan_results = ""
-
-scan_tab, backtest_tab = st.tabs(["Pre-Scan Universe", "Portfolio Backtest"])
-
-with scan_tab:
-    st.header("Find Tradable Tickers")
-    with st.form("prescan_form"):
-        default_tickers_str = ",".join(get_default_tickers(source=2, limit=100))
-        tickers_prescan = st.text_area("Tickers to Scan (comma-separated)", value=default_tickers_str, height=150)
+    # Build master dataframe
+    rows = []
+    for sym in symbols:
+        df = data[sym].tail(252).copy()  # 1 year
+        if len(df) < 60: continue
         
-        c1, c2 = st.columns(2)
-        strategy_type_prescan = c1.selectbox("Strategy Type", strategy_options, key="prescan_strat")
-        min_setups_prescan = c2.number_input("Minimum Historical Setups", min_value=5, value=60)
-
-        c1, c2 = st.columns(2)
-        start_date_prescan = c1.date_input("Start Date", datetime(2000, 1, 1), key="prescan_start")
-        end_date_prescan = c2.date_input("End Date", datetime.now(), key="prescan_end")
-
-        run_prescan = st.form_submit_button("Run Pre-Scan", use_container_width=True, disabled=DEMO_MODE)
-
-    if run_prescan:
-        progress_bar = st.progress(0)
-        progress_text = st.empty()
-
-        def update_progress(progress, text):
-            progress_bar.progress(progress)
-            progress_text.text(text)
-
-        ticker_list = [t.strip().upper() for t in tickers_prescan.split(',') if t.strip()]
+        latest = df.iloc[-1]
+        ret = df['close'].pct_change().dropna()
         
-        with st.spinner("Scanning universe for setups..."):
-            valid_tickers, counts = run_pre_scan_universe(
-                tickers=",".join(ticker_list),
-                strategy_type=strategy_type_prescan,
-                min_setups=min_setups_prescan,
-                start_date=start_date_prescan.strftime('%Y-%m-%d'),
-                end_date=end_date_prescan.strftime('%Y-%m-%d'),
-                progress_callback=update_progress
-            )
-        st.success("Pre-scan complete!")
+        # Risk metrics
+        volatility = ret.std() * np.sqrt(252) * 100
+        sharpe = (ret.mean() * 252) / (ret.std() * np.sqrt(252)) if ret.std() != 0 else 0
+        max_dd = ((df['close'].cummax() - df['close']) / df['close'].cummax()).max() * 100
+        var_95 = np.percentile(ret, 5) * 100
         
-        st.session_state.prescan_results = ",".join(valid_tickers)
-
-        if counts:
-            st.subheader("All Ticker Counts")
-            # Sort by count descending for better readability
-            all_counts_str = "\n".join([f"{ticker}: {count}" for ticker, count in sorted(counts.items(), key=lambda item: item[1], reverse=True)])
-            st.text_area("Full Scan Counts (Ticker: Setup Count)", value=all_counts_str, height=250)
-
-        if valid_tickers:
-            st.subheader("Tickers with Sufficient Setups")
-            st.write(f"Found {len(valid_tickers)} tickers with at least {min_setups_prescan} setups:")
-            
-            # Create a DataFrame for display
-            display_df = pd.DataFrame({
-                'Ticker': valid_tickers,
-                'Setup Count': [counts[t] for t in valid_tickers]
-            })
-            st.dataframe(display_df, use_container_width=True, hide_index=True)
-            
-            st.info(f"You can copy these tickers for the Portfolio Backtest tab: `{st.session_state.prescan_results}`")
-        else:
-            st.warning("No tickers found with sufficient setups for the given criteria.")
-
-with backtest_tab:
-    st.header("Run Portfolio Backtest")
-    with st.form("portfolio_backtest_form"):
-        # Pre-populate with results from pre-scan if available
-        tickers_portfolio = st.text_area("Tickers for Portfolio (comma-separated)", value=st.session_state.prescan_results, height=150, key="portfolio_tickers")
+        # Signal count
+        sig_count = sum(1 for name, sig in all_signals.items() 
+                       if not sig.empty and sym in sig['symbol'].values)
         
-        c1, c2, c3 = st.columns(3)
-        strategy_type_portfolio = c1.selectbox("Strategy Type", strategy_options, key="portfolio_strat")
-        max_open_positions = c2.number_input("Max Open Positions", min_value=1, value=5)
-        commission_portfolio = c3.number_input("Commission ($ per share)", value=0.0, format="%.4f", key="portfolio_comm")
+        rows.append({
+            'symbol': sym,
+            'price': latest['close'],
+            'vol_M': latest['volume']/1e6,
+            'volatility_%': volatility,
+            'sharpe': sharpe,
+            'max_drawdown_%': max_dd,
+            'VaR_95_%': var_95,
+            'signals': sig_count
+        })
 
-        c1, c2 = st.columns(2)
-        start_date_portfolio = c1.date_input("Start Date", datetime(2000, 1, 1), key="portfolio_start")
-        end_date_portfolio = c2.date_input("End Date", datetime.now(), key="portfolio_end")
+df_port = pd.DataFrame(rows).round(2)
 
-        use_tuned_params_portfolio = st.checkbox("Use Tuned Strategy Params?", value=True, key="portfolio_tuned_params")
+# === RISK DASHBOARD ===
+col1, col2, col3, col4, col5 = st.columns(5)
+col1.metric("Hottest (≥2 signals)", len(df_port[df_port['signals'] >= 2]))
+col2.metric("High Risk (>50% vol)", len(df_port[df_port['volatility_%'] > 50]))
+col3.metric("Best Risk/Reward (Sharpe > 1.5)", len(df_port[df_port['sharpe'] > 1.5]))
+col4.metric("Danger Zone (Max DD > 70%)", len(df_port[df_port['max_drawdown_%'] > 70]))
+col5.metric("Total Universe", len(df_port))
 
-        run_portfolio_backtest = st.form_submit_button("Run Portfolio Backtest", use_container_width=True, disabled=DEMO_MODE)
+# === MAIN RISK HEATMAP ===
+st.subheader("LIVE RISK & SIGNAL HEATMAP")
+df_display = df_port.copy()
+df_display['Risk_Level'] = pd.cut(df_display['volatility_%'], 
+                                  bins=[0, 30, 60, 100, 1000], 
+                                  labels=["Low", "Medium", "High", "Extreme"])
 
-    if run_portfolio_backtest:
-        if not tickers_portfolio:
-            st.error("Please enter tickers for the portfolio backtest.")
-        else:
-            ticker_list_portfolio = [t.strip().upper() for t in tickers_portfolio.split(',') if t.strip()]
-            if not ticker_list_portfolio:
-                st.error("No valid tickers entered for portfolio backtest.")
-            else:
-                st.info(f"Starting portfolio backtest for {len(ticker_list_portfolio)} tickers with {strategy_type_portfolio}...")
-                log_container = st.expander("Portfolio Backtest Log", expanded=True)
-                log_area = log_container.empty()
-                log_messages = []
+fig = px.scatter(df_display, x="volatility_%", y="signals", size="vol_M", color="sharpe",
+                 hover_name="symbol", color_continuous_scale="RdYlGn",
+                 size_max=60, range_color=[-2, 3],
+                 labels={"volatility_%": "Annual Volatility (%)", "signals": "Active Signals"})
+fig.update_layout(height=600)
+st.plotly_chart(fig, use_container_width=True)
 
-                # Re-purpose the log callback for portfolio backtest
-                import logging
-                root_logger = logging.getLogger()
-                
-                class UI_Handler(logging.Handler):
-                    def emit(self, record):
-                        log_messages.append(self.format(record))
-                        log_area.code("\n".join(log_messages[-100:]))
-                
-                ui_handler = UI_Handler()
-                formatter = logging.Formatter("[%(asctime)s] %(levelname)s: %(message)s", datefmt='%H:%M:%S')
-                ui_handler.setFormatter(formatter)
-                root_logger.addHandler(ui_handler)
+# === TOP LISTS ===
+tab1, tab2, tab3, tab4 = st.tabs(["Hottest", "Best Risk/Reward", "Highest Volatility", "Worst Drawdown"])
 
-                with st.spinner("Running portfolio walk-forward analysis... This will take a while."):
-                    result = run_pybroker_portfolio_backtest(
-                        tickers=ticker_list_portfolio,
-                        strategy_type=strategy_type_portfolio,
-                        start_date=start_date_portfolio.strftime('%Y-%m-%d'),
-                        end_date=end_date_portfolio.strftime('%Y-%m-%d'),
-                        max_open_positions=max_open_positions,
-                        commission_cost=commission_portfolio,
-                        use_tuned_strategy_params=use_tuned_params_portfolio,
-                    )
-                
-                root_logger.removeHandler(ui_handler) # Clean up handler
-                st.success("Portfolio backtest complete!")
+with tab1:
+    st.dataframe(df_port.sort_values("signals", ascending=False).head(15)[['symbol','price','signals','volatility_%','sharpe']], use_container_width=True)
 
-                if result:
-                    st.subheader("Portfolio Performance Metrics")
-                    metrics_display_df = result.metrics_df.astype(str)
-                    st.dataframe(metrics_display_df, use_container_width=True)
+with tab2:
+    st.dataframe(df_port.sort_values("sharpe", ascending=False).head(15)[['symbol','price','sharpe','volatility_%','signals']], use_container_width=True)
 
-                    st.subheader("Portfolio Equity Curve")
-                    fig_equity = plot_performance_vs_benchmark(result, f'Portfolio Equity for {strategy_type_portfolio}')
-                    if fig_equity:
-                        st.pyplot(fig_equity)
-                else:
-                    st.warning("No backtest results to display.")
+with tab3:
+    st.dataframe(df_port.sort_values("volatility_%", ascending=False).head(15)[['symbol','price','volatility_%','VaR_95_%','max_drawdown_%']], use_container_width=True)
+
+with tab4:
+    st.dataframe(df_port.sort_values("max_drawdown_%", ascending=False).head(15)[['symbol','price','max_drawdown_%','volatility_%']], use_container_width=True)
+
+st.caption("Live risk metrics • 252-day lookback • Your nuclear 52-stock universe")

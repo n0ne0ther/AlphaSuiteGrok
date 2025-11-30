@@ -3,6 +3,27 @@ from sqlalchemy.orm import sessionmaker
 from core.model import Base, Exchange
 from load_cfg import DATABASE_URL
 
+def get_all_data():
+    """
+    Returns a dictionary: {symbol: DataFrame} for all tickers in daily_prices
+    Compatible with all strategy scanners
+    """
+    import pandas as pd
+    from sqlalchemy import text
+    
+    engine = create_engine(DATABASE_URL)
+    query = text("""
+        SELECT timestamp, symbol, open, high, low, adj_close as close, volume
+        FROM daily_prices 
+        WHERE timestamp >= '2015-01-01'
+        ORDER BY symbol, timestamp
+    """)
+    df = pd.read_sql(query, engine, parse_dates=['timestamp'])
+    df = df.set_index('timestamp')
+    
+    # Group by symbol and return dict of DataFrames
+    return {sym: group.copy() for sym, group in df.groupby('symbol')}
+
 # --- Global Database Setup ---
 # Create the engine and session factory once when the module is imported.
 # This is the standard and most efficient practice for database applications.
